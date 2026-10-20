@@ -1,4 +1,4 @@
-name: Windows spaced-path smoke (fork only)
+name: Windows IPC follow-up (fork only)
 
 on:
   push:
@@ -9,24 +9,24 @@ permissions:
   contents: read
 
 jobs:
-  windows-smoke:
+  windows-ipc:
     if: github.repository == 'cat0825/Agents-Anywhere'
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     defaults:
       run:
         shell: pwsh
         working-directory: Smoke Workspace/Agents Anywhere/desktop-workbench
     env:
       YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
+      YARN_ENABLE_SCRIPTS: 'false'
       COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
       NEXT_TELEMETRY_DISABLED: '1'
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - name: Check out exact PR 350 head under a path containing spaces
+      - name: Check out exact PR 348 head under a path containing spaces
         uses: actions/checkout@v6
         with:
-          ref: 43cc84fc2c821fb554e561f73e753ff0b86f9ec3
+          ref: a5814e50347d391cf2adf02ffafc97ce0257ebd8
           path: Smoke Workspace/Agents Anywhere
       - name: Set up project-supported Node
         uses: actions/setup-node@v6
@@ -46,38 +46,11 @@ jobs:
         run: |
           corepack yarn install
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
-      - name: Desktop tests on exact PR head
-        id: tests
-        continue-on-error: true
+      - name: Run all desktop tests including the original failing IPC case
         run: |
           corepack yarn test:main
           if ($LASTEXITCODE -ne 0) { throw 'Desktop tests failed' }
-      - name: Renderer typecheck on exact PR head
-        id: types
-        continue-on-error: true
+      - name: Renderer typecheck
         run: |
           corepack yarn renderer:typecheck
           if ($LASTEXITCODE -ne 0) { throw 'Renderer typecheck failed' }
-      - name: Build Windows package using spaced Node and checkout paths
-        run: |
-          node scripts/dist-desktop.mjs win --dir
-          $dirExit = $LASTEXITCODE
-          if ($dirExit -ne 0) {
-            $app = Join-Path (Get-Location) 'release/win-unpacked/Agents Anywhere.exe'
-            if (!(Test-Path -LiteralPath $app)) { throw "Directory packaging failed with exit $dirExit" }
-            Write-Output "Directory package exists at $app, but dist entry point exited $dirExit; checking installer mode separately."
-            node scripts/dist-desktop.mjs win --skip-build
-            if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed' }
-          }
-          $installers = @(Get-ChildItem -LiteralPath 'release' -Filter '*.exe')
-          $apps = @(Get-ChildItem -LiteralPath 'release/win-unpacked' -Filter 'Agents Anywhere.exe' -ErrorAction SilentlyContinue)
-          if (($installers.Count + $apps.Count) -eq 0) { throw 'No executable artifact was produced' }
-          $installers + $apps | Select-Object FullName, Length | Format-Table
-      - name: Preserve test outcomes
-        if: always()
-        run: |
-          "Desktop tests: ${{ steps.tests.outcome }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "Renderer types: ${{ steps.types.outcome }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          if ('${{ steps.tests.outcome }}' -ne 'success' -or '${{ steps.types.outcome }}' -ne 'success') {
-            throw 'At least one headless verification failed; see individual step logs.'
-          }
